@@ -20,7 +20,7 @@ struct AppContainer {
     }
 
     func makeImageListViewModel() -> ImageListViewModel {
-        let feedRepository = SampleImageFeedRepository()
+        let feedRepository = SampleImageFeedRepository(session: session)
         let remoteDataSource = URLSessionRemoteImageDataSource(session: session)
         let imageRepository = DefaultRemoteImageRepository(
             remoteDataSource: remoteDataSource,
