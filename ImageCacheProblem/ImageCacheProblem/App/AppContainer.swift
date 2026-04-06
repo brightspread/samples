@@ -9,15 +9,23 @@ import Foundation
 
 struct AppContainer {
     private let session: URLSession
+    private let imageCacheStorage: ImageCacheStorage
 
-    init(session: URLSession = .shared) {
+    init(
+        session: URLSession = .shared,
+        imageCacheStorage: ImageCacheStorage = ImageMemoryCacheStorage()
+    ) {
         self.session = session
+        self.imageCacheStorage = imageCacheStorage
     }
 
     func makeImageListViewModel() -> ImageListViewModel {
         let feedRepository = SampleImageFeedRepository()
         let remoteDataSource = URLSessionRemoteImageDataSource(session: session)
-        let imageRepository = DefaultRemoteImageRepository(remoteDataSource: remoteDataSource)
+        let imageRepository = DefaultRemoteImageRepository(
+            remoteDataSource: remoteDataSource,
+            cacheStorage: imageCacheStorage
+        )
 
         return ImageListViewModel(
             fetchImageListUseCase: FetchImageListUseCase(repository: feedRepository),

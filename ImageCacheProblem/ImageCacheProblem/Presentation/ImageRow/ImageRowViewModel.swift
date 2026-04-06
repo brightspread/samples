@@ -6,7 +6,6 @@
 //
 
 import Combine
-import Combine
 import Foundation
 import UIKit
 
@@ -76,15 +75,10 @@ final class ImageRowViewModel: ObservableObject, Identifiable {
             guard let self else { return }
 
             do {
-                let data = try await self.loadRemoteImageUseCase.execute(url: self.imageURL)
+                let image = try await self.loadRemoteImageUseCase.execute(url: self.imageURL)
                 try Task.checkCancellation()
 
                 guard self.latestRequestID == requestID else { return }
-
-                guard let image = UIImage(data: data) else {
-                    self.phase = .failed("이미지 데이터를 해석하지 못했습니다.")
-                    return
-                }
 
                 self.phase = .loaded(image)
             } catch is CancellationError {

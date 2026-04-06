@@ -13,23 +13,78 @@ import UIKit
 struct ImageMemoryCacheStorageTests {
 
     @Test
-    func loadRemoteImageUseCase_returnsRepositoryData() async throws {
-        let expectedData = Data([0x00, 0x01, 0x02])
+    func image_forMissingURL_returnsNil() async {
+        let storage = ImageMemoryCacheStorage(maxCacheCount: 2)
+
+        let image = await storage.image(for: URL(fileURLWithPath: "/missing"))
+
+        #expect(image == nil)
+    }
+
+    @Test
+    func insert_storesImageForURL() async throws {
+        let storage = ImageMemoryCacheStorage(maxCacheCount: 2)
+        let url = try #require(URL(string: "https://example.com/a.png"))
+        let expectedImage = makeImage(color: .red)
+
+        await storage.insert(expectedImage, for: url)
+
+        let cachedImage = await storage.image(for: url)
+
+        #expect(cachedImage?.pngData() == expectedImage.pngData())
+    }
+
+    @Test
+    func insert_whenCapacityExceeded_removesLeastRecentlyUsedImage() async throws {
+        let storage = ImageMemoryCacheStorage(maxCacheCount: 2)
+        let firstURL = try #require(URL(string: "https://example.com/1.png"))
+        let secondURL = try #require(URL(string: "https://example.com/2.png"))
+        let thirdURL = try #require(URL(string: "https://example.com/3.png"))
+
+        await storage.insert(makeImage(color: .red), for: firstURL)
+        await storage.insert(makeImage(color: .green), for: secondURL)
+        await storage.insert(makeImage(color: .blue), for: thirdURL)
+
+        #expect(await storage.image(for: firstURL) == nil)
+        #expect(await storage.image(for: secondURL) != nil)
+        #expect(await storage.image(for: thirdURL) != nil)
+    }
+
+    @Test
+    func image_whenAccessed_updatesRecentUsageOrder() async throws {
+        let storage = ImageMemoryCacheStorage(maxCacheCount: 2)
+        let firstURL = try #require(URL(string: "https://example.com/1.png"))
+        let secondURL = try #require(URL(string: "https://example.com/2.png"))
+        let thirdURL = try #require(URL(string: "https://example.com/3.png"))
+
+        await storage.insert(makeImage(color: .red), for: firstURL)
+        await storage.insert(makeImage(color: .green), for: secondURL)
+        _ = await storage.image(for: firstURL)
+        await storage.insert(makeImage(color: .blue), for: thirdURL)
+
+        #expect(await storage.image(for: firstURL) != nil)
+        #expect(await storage.image(for: secondURL) == nil)
+        #expect(await storage.image(for: thirdURL) != nil)
+    }
+
+    @Test
+    func loadRemoteImageUseCase_returnsRepositoryImage() async throws {
+        let expectedImage = makeImage(color: .red)
         let useCase = LoadRemoteImageUseCase(
             repository: StubRemoteImageRepository(
-                result: .success(expectedData)
+                result: .success(expectedImage)
             )
         )
 
-        let data = try await useCase.execute(url: try #require(URL(string: "https://example.com/image.jpg")))
+        let image = try await useCase.execute(url: try #require(URL(string: "https://example.com/image.jpg")))
 
-        #expect(data == expectedData)
+        #expect(image.pngData() == expectedImage.pngData())
     }
 
     @MainActor
     @Test
     func imageRowViewModel_loadImageIfNeeded_setsLoadedPhase() async throws {
-        let image = makeImage()
+        let image = makeImage(color: .red)
         let viewModel = ImageRowViewModel(
             item: ImageItem(
                 title: "Title",
@@ -38,7 +93,7 @@ struct ImageMemoryCacheStorageTests {
             ),
             loadRemoteImageUseCase: LoadRemoteImageUseCase(
                 repository: StubRemoteImageRepository(
-                    result: .success(try #require(image.pngData()))
+                    result: .success(image)
                 )
             )
         )
@@ -75,26 +130,29 @@ struct ImageMemoryCacheStorageTests {
         #expect(viewModel.phase == .idle)
     }
 
-    private func makeImage() -> UIImage {
+    private func makeImage(color: UIColor) -> UIImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
         return renderer.image { context in
-            UIColor.red.setFill()
+            color.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         }
     }
 }
 
 private struct StubRemoteImageRepository: RemoteImageRepository {
-    let result: Result<Data, Error>
+    let result: Result<UIImage, Error>
 
-    func fetchImageData(from url: URL) async throws -> Data {
+    func fetchImage(from url: URL) async throws -> UIImage {
         try result.get()
     }
 }
 
 private actor DelayedRemoteImageRepository: RemoteImageRepository {
-    func fetchImageData(from url: URL) async throws -> Data {
+    func fetchImage(from url: URL) async throws -> UIImage {
         try await Task.sleep(for: .milliseconds(200))
-        return Data()
+        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
+            UIColor.blue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
     }
 }

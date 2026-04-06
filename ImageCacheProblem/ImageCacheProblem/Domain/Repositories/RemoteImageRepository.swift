@@ -6,7 +6,8 @@
 //
 
 import Foundation
+import UIKit
 
 protocol RemoteImageRepository {
-    func fetchImageData(from url: URL) async throws -> Data
+    func fetchImage(from url: URL) async throws -> UIImage
 }

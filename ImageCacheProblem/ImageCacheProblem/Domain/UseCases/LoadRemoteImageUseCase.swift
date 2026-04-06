@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 struct LoadRemoteImageUseCase {
     private let repository: RemoteImageRepository
@@ -14,7 +15,7 @@ struct LoadRemoteImageUseCase {
         self.repository = repository
     }
 
-    func execute(url: URL) async throws -> Data {
-        try await repository.fetchImageData(from: url)
+    func execute(url: URL) async throws -> UIImage {
+        try await repository.fetchImage(from: url)
     }
 }

@@ -5,102 +5,63 @@
 //  Created by leon.jo on 4/6/26.
 //
 
+import Foundation
 import UIKit
 
 protocol ImageCacheStorage: AnyObject {
-    func image(for key: String) -> UIImage?
-    func insert(_ image: UIImage, for key: String)
+    func image(for url: URL) async -> UIImage?
+    func insert(_ image: UIImage, for url: URL) async
+    func removeImage(for url: URL) async
+    func removeAll() async
 }
 
-final class ImageMemoryCacheStorage: ImageCacheStorage {
-    private final class Node {
-        let key: String
-        var image: UIImage
-        var previous: Node?
-        var next: Node?
+actor ImageMemoryCacheStorage: ImageCacheStorage {
+    nonisolated(unsafe) private let cache: NSCache<NSURL, UIImage>
+    private var accessOrder: [URL] = []
 
-        init(key: String, image: UIImage) {
-            self.key = key
-            self.image = image
-        }
+    private let maxCacheCount: Int
+
+    init(maxCacheCount: Int = 100) {
+        self.maxCacheCount = max(maxCacheCount, 1)
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = self.maxCacheCount
+        self.cache = cache
     }
 
-    private let capacity: Int
-    private var storage: [String: Node] = [:]
-    private var head: Node?
-    private var tail: Node?
-
-    init(capacity: Int = 100) {
-        self.capacity = max(capacity, 1)
-    }
-
-    func image(for key: String) -> UIImage? {
-        guard let node = storage[key] else {
+    func image(for url: URL) async -> UIImage? {
+        guard let image = cache.object(forKey: url as NSURL) else {
             return nil
         }
 
-        moveToHead(node)
-        return node.image
+        markAsRecentlyUsed(url)
+        return image
     }
 
-    func insert(_ image: UIImage, for key: String) {
-        if let node = storage[key] {
-            node.image = image
-            moveToHead(node)
-            return
-        }
-
-        let node = Node(key: key, image: image)
-        storage[key] = node
-        insertAtHead(node)
-        removeLeastRecentlyUsedImageIfNeeded()
+    func insert(_ image: UIImage, for url: URL) async {
+        cache.setObject(image, forKey: url as NSURL)
+        markAsRecentlyUsed(url)
+        evictIfNeeded()
     }
 
-    private func insertAtHead(_ node: Node) {
-        node.previous = nil
-        node.next = head
-        head?.previous = node
-        head = node
-
-        if tail == nil {
-            tail = node
-        }
+    func removeImage(for url: URL) async {
+        cache.removeObject(forKey: url as NSURL)
+        accessOrder.removeAll { $0 == url }
     }
 
-    private func moveToHead(_ node: Node) {
-        guard head !== node else {
-            return
-        }
-
-        detach(node)
-        insertAtHead(node)
+    func removeAll() async {
+        cache.removeAllObjects()
+        accessOrder.removeAll()
     }
 
-    private func detach(_ node: Node) {
-        let previous = node.previous
-        let next = node.next
-
-        previous?.next = next
-        next?.previous = previous
-
-        if tail === node {
-            tail = previous
-        }
-
-        if head === node {
-            head = next
-        }
-
-        node.previous = nil
-        node.next = nil
+    private func markAsRecentlyUsed(_ url: URL) {
+        accessOrder.removeAll { $0 == url }
+        accessOrder.append(url)
     }
 
-    private func removeLeastRecentlyUsedImageIfNeeded() {
-        guard storage.count > capacity, let leastRecentlyUsedNode = tail else {
-            return
+    private func evictIfNeeded() {
+        while accessOrder.count > maxCacheCount {
+            let leastRecentlyUsedURL = accessOrder.removeFirst()
+            cache.removeObject(forKey: leastRecentlyUsedURL as NSURL)
         }
-
-        detach(leastRecentlyUsedNode)
-        storage[leastRecentlyUsedNode.key] = nil
     }
 }
