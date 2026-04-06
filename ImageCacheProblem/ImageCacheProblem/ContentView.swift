@@ -8,17 +8,17 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var viewModel: ImageListViewModel
+
+    init(viewModel: ImageListViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        ImageListView(viewModel: viewModel)
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(viewModel: AppContainer().makeImageListViewModel())
 }

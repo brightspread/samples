@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct ImageCacheProblemApp: App {
+    private let container = AppContainer()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(viewModel: container.makeImageListViewModel())
         }
     }
 }
