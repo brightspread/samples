@@ -62,6 +62,8 @@ final class ImageRowViewModel: ObservableObject, Identifiable {
     func cancelLoading() {
         loadTask?.cancel()
         loadTask = nil
+        latestRequestID = nil
+        phase = .idle
     }
 
     private func loadImage() {

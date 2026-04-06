@@ -7,6 +7,7 @@
 
 import Foundation
 import Testing
+import UIKit
 @testable import ImageCacheProblem
 
 struct ImageCacheProblemTests {
@@ -26,6 +27,74 @@ struct ImageCacheProblemTests {
 
         #expect(items == expectedItems)
     }
+
+    @Test
+    func remoteImageRepository_whenCacheHit_returnsCachedImageWithoutFetchingRemoteData() async throws {
+        let url = try #require(URL(string: "https://example.com/cached.jpg"))
+        let cachedImage = makeImage(color: .red)
+        let cacheStorage = SpyImageCacheStorage(imageByURL: [url: cachedImage])
+        let remoteDataSource = SpyRemoteImageDataSource()
+        let repository = DefaultRemoteImageRepository(
+            remoteDataSource: remoteDataSource,
+            cacheStorage: cacheStorage
+        )
+
+        let image = try await repository.fetchImage(from: url)
+
+        #expect(image.pngData() == cachedImage.pngData())
+        let fetchedURLs = await remoteDataSource.fetchedURLs
+        #expect(fetchedURLs.isEmpty)
+        let insertedURLs = await cacheStorage.insertedURLs
+        #expect(insertedURLs.isEmpty)
+    }
+
+    @Test
+    func remoteImageRepository_whenCacheMiss_fetchesRemoteDataAndStoresImage() async throws {
+        let url = try #require(URL(string: "https://example.com/remote.jpg"))
+        let remoteImage = makeImage(color: .blue)
+        let cacheStorage = SpyImageCacheStorage()
+        let remoteDataSource = SpyRemoteImageDataSource(data: try #require(remoteImage.pngData()))
+        let repository = DefaultRemoteImageRepository(
+            remoteDataSource: remoteDataSource,
+            cacheStorage: cacheStorage
+        )
+
+        let image = try await repository.fetchImage(from: url)
+
+        #expect(image.pngData() == remoteImage.pngData())
+        let fetchedURLs = await remoteDataSource.fetchedURLs
+        #expect(fetchedURLs == [url])
+        let insertedURLs = await cacheStorage.insertedURLs
+        #expect(insertedURLs == [url])
+        let insertedImage = await cacheStorage.image(for: url)
+        #expect(insertedImage?.pngData() == remoteImage.pngData())
+    }
+
+    @Test
+    func remoteImageRepository_whenRemoteDataIsInvalid_throwsErrorWithoutCaching() async throws {
+        let url = try #require(URL(string: "https://example.com/invalid.jpg"))
+        let cacheStorage = SpyImageCacheStorage()
+        let remoteDataSource = SpyRemoteImageDataSource(data: Data([0x00, 0x01, 0x02]))
+        let repository = DefaultRemoteImageRepository(
+            remoteDataSource: remoteDataSource,
+            cacheStorage: cacheStorage
+        )
+
+        await #expect(throws: DefaultRemoteImageRepositoryError.invalidImageData) {
+            _ = try await repository.fetchImage(from: url)
+        }
+
+        let insertedURLs = await cacheStorage.insertedURLs
+        #expect(insertedURLs.isEmpty)
+    }
+
+    private func makeImage(color: UIColor) -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
+        return renderer.image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+    }
 }
 
 private struct StubImageFeedRepository: ImageFeedRepository {
@@ -33,5 +102,45 @@ private struct StubImageFeedRepository: ImageFeedRepository {
 
     func fetchImageItems() async throws -> [ImageItem] {
         items
+    }
+}
+
+private actor SpyImageCacheStorage: ImageCacheStorage {
+    private var imageByURL: [URL: UIImage]
+    private(set) var insertedURLs: [URL] = []
+
+    init(imageByURL: [URL: UIImage] = [:]) {
+        self.imageByURL = imageByURL
+    }
+
+    func image(for url: URL) async -> UIImage? {
+        imageByURL[url]
+    }
+
+    func insert(_ image: UIImage, for url: URL) async {
+        imageByURL[url] = image
+        insertedURLs.append(url)
+    }
+
+    func removeImage(for url: URL) async {
+        imageByURL[url] = nil
+    }
+
+    func removeAll() async {
+        imageByURL.removeAll()
+    }
+}
+
+private actor SpyRemoteImageDataSource: RemoteImageDataSource {
+    private let data: Data
+    private(set) var fetchedURLs: [URL] = []
+
+    init(data: Data = Data()) {
+        self.data = data
+    }
+
+    func fetchImageData(from url: URL) async throws -> Data {
+        fetchedURLs.append(url)
+        return data
     }
 }
